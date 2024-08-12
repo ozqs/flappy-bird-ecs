@@ -1,5 +1,3 @@
-use std::f32::MAX;
-
 use bevy_ecs::prelude::*;
 use macroquad::prelude::*;
 
