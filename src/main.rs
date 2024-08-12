@@ -8,10 +8,10 @@ use macroquad::prelude::*;
 use systems::*;
 use rand::gen_range;
 
-const BIRD_FLAP: f32 = 100.;
+const BIRD_FLAP: f32 = 80.;
 pub const G: f32 = 490.;
-pub const MAX_SPEED: f32 = 500.;
-const BARRIER_LEFT_SPEED: f32 = 100.;
+pub const MAX_SPEED: f32 = 200.;
+const BARRIER_LEFT_SPEED: f32 = 200.;
 
 enum GameMode {
     MainMenu,
@@ -23,15 +23,67 @@ enum GameMode {
 async fn main() {
     let mut world = World::new();
 
-    let bird = load_texture("bird.png").await.unwrap();
+    let bird_img = load_texture("bird.png").await.unwrap();
     let barrier = load_texture("barrier.png").await.unwrap();
-    bird.set_filter(FilterMode::Nearest);
-    let size = bird.size() * 3.;
+    bird_img.set_filter(FilterMode::Nearest);
+    let size = bird_img.size() * 3.;
     let params = DrawTextureParams {
         dest_size: Some(size),
         ..Default::default()
     };
 
+
+
+    let mut schedule = Schedule::default();
+
+    // Add our system to the schedule
+    schedule.add_systems(update_velocity_by_gravity);
+    schedule.add_systems(update_position_by_velocity);
+    schedule.add_systems(draw_texture_in_position);
+    schedule.add_systems(handle_collide);
+    schedule.add_systems(handle_flap);
+    schedule.add_systems(despawn_out_of_bounds_system);
+
+    let mut bird= Entity::from_raw(0);
+    let mut latest= Entity::from_raw(0);
+    let mut mode = GameMode::MainMenu;
+
+    loop {
+        clear_background(SKYBLUE);
+        match mode {
+            GameMode::GameOverMenu => {
+                draw_text("Game Over", 100., 100., 100., PURPLE);
+                if is_key_down(KeyCode::Space) {
+                    (bird, latest) = restart(&mut world, bird_img.clone(), &barrier, size, params.clone());
+                    mode = GameMode::Playing;
+                }
+            }
+            GameMode::Playing => {
+
+                let mut lastx = world.entity(latest).get::<Position>().unwrap().x;
+                while lastx < screen_width() {
+                    lastx += gen_range(200., 500.);
+                    (_, latest) = spawn_barrier_randomly(lastx, &mut world, &barrier);
+                }
+
+                schedule.run(&mut world);
+                if world.get_entity(bird).is_none() {
+                    mode = GameMode::GameOverMenu;
+                }
+            }
+            GameMode::MainMenu => {
+                draw_text("Press Space to Start", 100., 100., 60., PURPLE);
+                if is_key_down(KeyCode::Space) {
+                    (bird, latest) = restart(&mut world, bird_img.clone(), &barrier, size, params.clone());
+                    mode = GameMode::Playing;
+                }
+            }
+        }
+        next_frame().await;
+    }
+}
+
+fn restart(mut world: &mut World, bird: Texture2D, barrier: &Texture2D, size: Vec2, params: DrawTextureParams) -> (Entity, Entity) {
     let bird = world
         .spawn((
             Position::new(100., 100.),
@@ -44,36 +96,9 @@ async fn main() {
         ))
         .id();
 
-    let mut schedule = Schedule::default();
-
-    // Add our system to the schedule
-    schedule.add_systems(update_velocity_by_gravity);
-    schedule.add_systems(update_position_by_velocity);
-    schedule.add_systems(draw_texture_in_position);
-    schedule.add_systems(handle_collide);
-    schedule.add_systems(handle_flap);
-    schedule.add_systems(despawn_out_of_bounds_system);
-
     // let mut lastx: f32 = 1000.;
-    let (_, mut latest) = spawn_barrier_randomly(1000., &mut world, &barrier);
-
-    loop {
-        clear_background(SKYBLUE);
-
-        // println!("Loop hard.");
-
-        let mut lastx = world.entity(latest).get::<Position>().unwrap().x;
-        while lastx < screen_width() {
-            lastx += gen_range(200., 500.);
-            (_, latest) = spawn_barrier_randomly(lastx, &mut world, &barrier);
-        }
-
-        schedule.run(&mut world);
-        if world.get_entity(bird).is_none() {
-            break;
-        }
-        next_frame().await;
-    }
+    let (_, latest) = spawn_barrier_randomly(1000., &mut world, &barrier);
+    (bird, latest)
 }
 
 fn spawn_barrier_randomly(x: f32, world: &mut World, barrier: &Texture2D) -> (Entity, Entity) {
